@@ -4,10 +4,10 @@
 
 module double_tokens
 (
-    input        clk,
-    input        rst,
-    input        a,
-    output       b,
+    input  logic clk,
+    input  logic rst,
+    input  logic a,
+    output logic b,
     output logic overflow
 );
     // Task:
@@ -25,5 +25,41 @@ module double_tokens
     // a -> 10010011000110100001100100
     // b -> 11011011110111111001111110
 
+    logic [7:0] count;
+
+    always_ff @(posedge clk)
+    begin
+      if (rst)
+      begin
+        count    <= '0;
+        overflow <= '0;
+        b        <= '0;
+      end
+      else
+      begin
+          // Overflow logic
+        if (a)
+        begin
+          if (count == 200)
+            overflow <= '1;
+          else
+          begin
+            count <= count + 1'b1;
+            b     <= '1;
+          end
+        end
+        else
+        begin
+          if (count == '0)
+            b <= '0;
+          else
+          begin
+            count <= count - 1'b1;
+            b <= '1;
+          end
+        end
+      end
+    end
 
 endmodule
+

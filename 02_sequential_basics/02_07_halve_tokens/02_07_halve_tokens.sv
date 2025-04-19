@@ -7,7 +7,7 @@ module halve_tokens
     input  clk,
     input  rst,
     input  a,
-    output b
+    output logic b
 );
     // Task:
     // Implement a serial module that reduces amount of incoming '1' tokens by half.
@@ -19,5 +19,28 @@ module halve_tokens
     // a -> 110_011_101_000_1111
     // b -> 010_001_001_000_0101
 
+    logic state;
+
+    always_ff @(posedge clk)
+    begin
+      if (rst)
+      begin
+        state = 1'b0;
+        b = 1'b0;
+      end
+      else
+      begin
+        if (a)
+        begin
+          state = ~state;
+          b = state;
+        end
+        else
+        begin
+          b = 1'b0;
+        end
+      end
+    end
 
 endmodule
+
