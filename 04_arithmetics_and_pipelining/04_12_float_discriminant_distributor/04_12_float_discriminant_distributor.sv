@@ -15,20 +15,37 @@ module float_discriminant_distributor (
     output logic                    busy
 );
 
-    // Task:
-    //
-    // Implement a module that will calculate the discriminant based
-    // on the triplet of input number a, b, c. The module must be pipelined.
-    // It should be able to accept a new triple of arguments on each clock cycle
-    // and also, after some time, provide the result on each clock cycle.
-    // The idea of the task is similar to the task 04_11. The main difference is
-    // in the underlying module 03_08 instead of formula modules.
-    //
-    // Note 1:
-    // Reuse your file "03_08_float_discriminant.sv" from the Homework 03.
-    //
-    // Note 2:
-    // Latency of the module "float_discriminant" should be clarified from the waveform.
+    // Instantiate the float_discriminant module
+    float_discriminant u_float_discriminant (
+        .clk(clk),
+        .rst(rst),
+        .arg_vld(arg_vld),
+        .a(a),
+        .b(b),
+        .c(c),
+        .res_vld(res_vld),
+        .res(res),
+        .res_negative(res_negative),
+        .err(err)
+    );
 
+    // Counter to track pending computations for busy signal
+    logic [31:0] pending_count;
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            pending_count <= 0;
+        end else begin
+            case ({arg_vld, res_vld})
+                2'b00: pending_count <= pending_count;                  // No change
+                2'b01: if (pending_count > 0) pending_count <= pending_count - 1; // Result produced
+                2'b10: pending_count <= pending_count + 1;             // New input accepted
+                2'b11: pending_count <= pending_count;                 // Input accepted and result produced
+            endcase
+        end
+    end
+
+    // Busy is high when there are pending computations or a new input is being accepted
+    assign busy = (pending_count > 0) || arg_vld;
 
 endmodule

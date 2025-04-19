@@ -42,5 +42,38 @@ module formula_2_pipe
     // FPGA-Systems Magazine :: FSM :: Issue ALFA (state_0)
     // You can download this issue from https://fpga-systems.ru/fsm#state_0
 
+    logic vld1, vld2, vld3;
+    logic [31:0] res1, res2, res3;
+
+    isqrt sqrt1(
+          .clk(clk),
+          .rst(rst),
+          .x_vld(arg_vld),
+          .x(a),
+          .y_vld(vld1),
+          .y(res1)
+    );
+
+    isqrt sqrt2(
+          .clk(clk),
+          .rst(rst),
+          .x_vld(vld1 & arg_vld),
+          .x(res1 + b),
+          .y_vld(vld2),
+          .y(res2)
+    );
+
+    isqrt sqrt3(
+          .clk(clk),
+          .rst(rst),
+          .x_vld(vld2 & arg_vld),
+          .x(res2 + c),
+          .y_vld(vld3),
+          .y(res3)
+    );    
+
+    assign res_vld = vld3;
+    assign res = res3;
+
 
 endmodule

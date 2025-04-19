@@ -6,15 +6,11 @@ module put_in_order
 (
     input                       clk,
     input                       rst,
-
-    input  [ n_inputs - 1 : 0 ] up_vlds,
-    input  [ n_inputs - 1 : 0 ]
-           [ width    - 1 : 0 ] up_data,
-
-    output                      down_vld,
-    output [ width   - 1 : 0 ]  down_data
+    input  [n_inputs-1:0]       up_vlds,
+    input  [n_inputs-1:0][width-1:0] up_data,
+    output reg                  down_vld,
+    output reg [width-1:0]      down_data
 );
-
     // Task:
     //
     // Implement a module that accepts many outputs of the computational blocks
@@ -29,6 +25,8 @@ module put_in_order
     // Comment:
     // The idea of the block is kinda similar to the "parallel_to_serial" block
     // from Homework 2, but here block should also preserve the output order.
-
+    //
+    //
+    // i don't know ....
 
 endmodule
