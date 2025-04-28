@@ -43,70 +43,71 @@ module sqrt_formula_distributor
     // Instantiate sufficient number of "formula_1_impl_1_top", "formula_1_impl_2_top",
     // or "formula_2_top" modules to achieve desired performance.
 
-    localparam N = (formula == 1) ? 13 : 51;
-    
-    logic [31:0] in_a   [N];
-    logic [31:0] in_b   [N];
-    logic [31:0] in_c   [N];
-    logic        in_vld [N];
+  localparam NUM_CHAN = (formula == 1) ? 13 : 49;
 
-    logic [31:0] out_res [N];
-    logic        out_vld [N];
+  logic [31:0] arg_in_a   [NUM_CHAN];
+  logic [31:0] arg_in_b   [NUM_CHAN];
+  logic [31:0] arg_in_c   [NUM_CHAN];
+  logic        arg_valid  [NUM_CHAN];
+  logic [31:0] res_out    [NUM_CHAN];
+  logic        res_valid  [NUM_CHAN];
+  logic [7:0]  channel_idx;
 
-    logic [5:0] cnt;
-
-    always_ff @ (posedge clk) begin
-        if (rst) begin
-            cnt <= '0;
-        end
-
-        if(cnt ==  N - 1)
-            cnt <= 0;
-        else
-            cnt++;
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      channel_idx <= '0;
+    end else begin
+      if (channel_idx == NUM_CHAN - 1) begin
+        channel_idx <= '0;
+      end else begin
+        channel_idx <= channel_idx + 1;
+      end
     end
-    
-    always_comb begin
-        for (int i = 0; i < N; i++)
-            in_vld[i] = '0;
+  end
 
-        in_a  [cnt] = a;
-        in_b  [cnt] = b;
-        in_c  [cnt] = c;
-        in_vld[cnt] = arg_vld;   
-
-        res     = out_res[cnt];
-        res_vld = out_vld[cnt];
+  always_comb begin
+    for (int j = 0; j < NUM_CHAN; j++) begin
+      arg_valid[j] = 1'b0;
     end
 
+    arg_in_a[channel_idx]  = a;
+    arg_in_b[channel_idx]  = b;
+    arg_in_c[channel_idx]  = c;
+    arg_valid[channel_idx] = arg_vld;
 
-    generate
-        genvar i;
-        if (formula == 1)
-            for (i = 0; i < N; i++)
-                formula_1_impl_1_top f1(
-                    .clk(clk),
-                    .rst(rst),
-                    .a(in_a[i]),
-                    .b(in_b[i]),
-                    .c(in_c[i]),
-                    .arg_vld(in_vld[i]),
-                    .res_vld(out_vld[i]),
-                    .res(out_res[i]));
+    res     = res_out[channel_idx];
+    res_vld = res_valid[channel_idx];
+  end
 
-        else if (formula == 2)
-            for (i = 0; i < N; i++)
-                formula_2_top f2(
-                    .clk(clk),
-                    .rst(rst),
-                    .a(in_a[i]),
-                    .b(in_b[i]),
-                    .c(in_c[i]),
-                    .arg_vld(in_vld[i]),
-                    .res_vld(out_vld[i]),
-                    .res(out_res[i]));
-
-    endgenerate
-
+  generate
+    genvar i;
+    if (formula == 1) begin : gen_formula1
+      for (i = 0; i < NUM_CHAN; i++) begin : formula1_inst
+        formula_1_impl_1_top u_formula1 (
+          .clk     (clk),
+          .rst     (rst),
+          .a       (arg_in_a[i]),
+          .b       (arg_in_b[i]),
+          .c       (arg_in_c[i]),
+          .arg_vld (arg_valid[i]),
+          .res_vld (res_valid[i]),
+          .res     (res_out[i])
+        );
+      end
+    end else if (formula == 2) begin : gen_formula2
+      for (i = 0; i < NUM_CHAN; i++) begin : formula2_inst
+        formula_2_top u_formula2 (
+          .clk     (clk),
+          .rst     (rst),
+          .a       (arg_in_a[i]),
+          .b       (arg_in_b[i]),
+          .c       (arg_in_c[i]),
+          .arg_vld (arg_valid[i]),
+          .res_vld (res_valid[i]),
+          .res     (res_out[i])
+        );
+      end
+    end
+  endgenerate
 
 endmodule

@@ -30,139 +30,198 @@ module float_discriminant (
     // The FLEN parameter is defined in the "import/preprocessed/cvw/config-shared.vh" file
     // and usually equal to the bit width of the double-precision floating-point number, FP64, 64 bits.
 
-        enum logic [3:0] {
-        st_idle,
+    localparam [FLEN-1:0] FOUR = 64'h4010000000000000;
 
-        st_send_b2,
-        st_wait_b2,
+    typedef enum logic [3:0] {
+      S_IDLE,
+      S_CHECK_INPUT,
+      S_CALC_B_SQ,
+      S_WAIT_B_SQ,
+      S_CALC_AC,
+      S_WAIT_AC,
+      S_CALC_4AC,
+      S_WAIT_4AC,
+      S_CALC_SUB,
+      S_WAIT_SUB,
+      S_DONE
+    } state_t;
 
-        st_send_ac,
-        wait_ac,
+    state_t state_reg, state_next;
 
-        st_send_4ac,
-        st_wait_4ac,
+    logic [FLEN-1:0] a_reg, b_reg, c_reg;
+    logic [FLEN-1:0] b_sq_reg, ac_reg, four_ac_reg;
+    logic [FLEN-1:0] res_reg;
+    logic err_accum_reg, err_accum_next;
 
-        st_send_res,
-        st_wait_res,
+    logic            mult_up_valid;
+    logic [FLEN-1:0] mult_a, mult_b;
+    logic            mult_down_valid;
+    logic [FLEN-1:0] mult_result;
+    logic            mult_busy;
+    logic            mult_error;
 
-        st_output
-    } state, next_state;
+    logic            sub_up_valid;
+    logic [FLEN-1:0] sub_a, sub_b;
+    logic            sub_down_valid;
+    logic [FLEN-1:0] sub_result;
+    logic            sub_busy;
+    logic            sub_error;
 
-    logic [FLEN-1:0] b2, ac, four_ac;
-    logic [FLEN-1:0] four = 64'h4010000000000000;
-
-    logic [FLEN-1:0] fmult_a, fmult_b, fsub_a, fsub_b;
-    logic [FLEN-1:0] fmult_res, fsub_res;
-
-    logic fmult_up_valid, fmult_down_valid, fmult_busy, fmult_err;
-    logic fsub_up_valid,  fsub_down_valid,  fsub_busy,  fsub_err;
-
-    f_mult u_mult (
-        .clk(clk), .rst(rst),
-        .a(fmult_a), .b(fmult_b), .up_valid(fmult_up_valid),
-        .res(fmult_res), .down_valid(fmult_down_valid),
-        .busy(fmult_busy), .error(fmult_err)
+    f_mult mult_unit (
+      .clk        (clk),
+      .rst        (rst),
+      .a          (mult_a),
+      .b          (mult_b),
+      .up_valid   (mult_up_valid),
+      .res        (mult_result),
+      .down_valid (mult_down_valid),
+      .busy       (mult_busy),
+      .error      (mult_error)
     );
 
-    f_sub u_sub (
-        .clk(clk), .rst(rst),
-        .a(fsub_a), .b(fsub_b), .up_valid(fsub_up_valid),
-        .res(fsub_res), .down_valid(fsub_down_valid),
-        .busy(fsub_busy), .error(fsub_err)
+    f_sub sub_unit (
+      .clk        (clk),
+      .rst        (rst),
+      .a          (sub_a),
+      .b          (sub_b),
+      .up_valid   (sub_up_valid),
+      .res        (sub_result),
+      .down_valid (sub_down_valid),
+      .busy       (sub_busy),
+      .error      (sub_error)
     );
 
-    always_comb
-    begin
-      res_vld        = 0;
-      fmult_up_valid = 0;
-      fsub_up_valid  = 0;
+    function logic is_invalid_float(input [FLEN-1:0] val);
+      localparam NE = (FLEN == 64) ? 11 : (FLEN == 32) ? 8 : 11;
+      return &val[FLEN-2 : FLEN-1-NE];
+    endfunction
 
-      busy         = (state != st_idle && state != st_output);
-      err          = fmult_err | fsub_err;
-      res_negative = res[FLEN-1];
+    always_ff @(posedge clk or posedge rst) begin
+      if (rst) begin
+        state_reg     <= S_IDLE;
+        a_reg         <= '0;
+        b_reg         <= '0;
+        c_reg         <= '0;
+        b_sq_reg      <= '0;
+        ac_reg        <= '0;
+        four_ac_reg   <= '0;
+        res_reg       <= '0;
+        err_accum_reg <= 1'b0;
+      end else begin
+        state_reg     <= state_next;
+        err_accum_reg <= err_accum_next;
 
-      case (state)
-        st_idle:
+        if (state_reg == S_IDLE && arg_vld) begin
+          a_reg <= a;
+          b_reg <= b;
+          c_reg <= c;
+        end
+
+        if (state_reg == S_WAIT_B_SQ && mult_down_valid)
+          b_sq_reg <= mult_result;
+
+        if (state_reg == S_WAIT_AC && mult_down_valid)
+          ac_reg <= mult_result;
+
+        if (state_reg == S_WAIT_4AC && mult_down_valid)
+          four_ac_reg <= mult_result;
+
+        if (state_reg == S_WAIT_SUB && sub_down_valid)
+          res_reg <= sub_result;
+      end
+    end
+
+    always_comb begin
+      state_next      = state_reg;
+      res_vld         = 1'b0;
+      mult_up_valid   = 1'b0;
+      sub_up_valid    = 1'b0;
+      mult_a          = 'x;
+      mult_b          = 'x;
+      sub_a           = 'x;
+      sub_b           = 'x;
+      err_accum_next  = err_accum_reg;
+
+      case (state_reg)
+        S_IDLE: begin
+          err_accum_next = 1'b0;
           if (arg_vld)
-              next_state = st_send_b2;
-
-        st_send_b2:
-        begin
-          fmult_up_valid = 1;
-          fmult_a = b;
-          fmult_b = b;
-
-          next_state = st_wait_b2;
+            state_next = S_CHECK_INPUT;
         end
 
-        st_wait_b2:
-          if (fmult_down_valid) begin
-              b2 <= fmult_res;
-              next_state = st_send_ac;
+        S_CHECK_INPUT: begin
+          err_accum_next = is_invalid_float(a_reg) | is_invalid_float(b_reg) | is_invalid_float(c_reg);
+          state_next = S_CALC_B_SQ;
+        end
+
+        S_CALC_B_SQ: begin
+          mult_up_valid = 1'b1;
+          mult_a        = b_reg;
+          mult_b        = b_reg;
+          state_next    = S_WAIT_B_SQ;
+        end
+
+        S_WAIT_B_SQ: begin
+          if (mult_down_valid) begin
+            err_accum_next = err_accum_reg | mult_error;
+            state_next     = S_CALC_AC;
           end
-            
-        st_send_ac:
-        begin
-          fmult_up_valid = 1;
-          fmult_a = a;
-          fmult_b = c;
-
-          next_state = wait_ac;
         end
 
-        wait_ac:
-          if (fmult_down_valid)
-          begin
-            ac <= fmult_res;
-            next_state = st_send_4ac;
+        S_CALC_AC: begin
+          mult_up_valid = 1'b1;
+          mult_a        = a_reg;
+          mult_b        = c_reg;
+          state_next    = S_WAIT_AC;
+        end
+
+        S_WAIT_AC: begin
+          if (mult_down_valid) begin
+            err_accum_next = err_accum_reg | mult_error;
+            state_next     = S_CALC_4AC;
           end
-
-        st_send_4ac:
-        begin
-          fmult_up_valid = 1;
-          fmult_a = four;
-          fmult_b = ac;
-
-          next_state = st_wait_4ac;
         end
 
-        st_wait_4ac:
-          if (fmult_down_valid)
-          begin
-            four_ac <= fmult_res;
-            next_state = st_send_res;
+        S_CALC_4AC: begin
+          mult_up_valid = 1'b1;
+          mult_a        = FOUR;
+          mult_b        = ac_reg;
+          state_next    = S_WAIT_4AC;
+        end
+
+        S_WAIT_4AC: begin
+          if (mult_down_valid) begin
+            err_accum_next = err_accum_reg | mult_error;
+            state_next     = S_CALC_SUB;
           end
-
-        st_send_res:
-        begin
-          fsub_up_valid = 1;
-          fsub_a = b2;
-          fsub_b = four_ac;
-
-          next_state = st_wait_res;
         end
 
-        st_wait_res:
-          if (fsub_down_valid)
-          begin
-            res <= fsub_res;
-            next_state = st_output;
+        S_CALC_SUB: begin
+          sub_up_valid = 1'b1;
+          sub_a        = b_sq_reg;
+          sub_b        = four_ac_reg;
+          state_next   = S_WAIT_SUB;
+        end
+
+        S_WAIT_SUB: begin
+          if (sub_down_valid) begin
+            err_accum_next = err_accum_reg | sub_error;
+            state_next     = S_DONE;
           end
-
-        st_output:
-        begin
-          res_vld    = 1;
-          next_state = st_idle;
         end
+
+        S_DONE: begin
+          res_vld    = 1'b1;
+          state_next = S_IDLE;
+        end
+
+        default: state_next = S_IDLE;
       endcase
     end
 
-    always_ff @(posedge clk) begin
-      if (rst) 
-        state <= st_idle;
-      else 
-        state <= next_state;
-    end
-
+    assign res          = res_reg;
+    assign res_negative = res_reg[FLEN-1];
+    assign err          = err_accum_reg;
+    assign busy         = (state_reg != S_IDLE);
 
 endmodule
